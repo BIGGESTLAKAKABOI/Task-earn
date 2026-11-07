@@ -1,0 +1,385 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskEarn Nigeria | Earn Naira</title>
+<style>
+  :root { --primary:#0d6efd; --success:#198754; --danger:#dc3545; --dark:#212529; --bg:#f8f9fa; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:system-ui,sans-serif; background:var(--bg); color:var(--dark); }
+  .container { max-width:1100px; margin:0 auto; padding:20px; }
+  header { background:var(--primary); color:white; padding:16px 0; margin-bottom:24px; }
+  header .container { display:flex; justify-content:space-between; align-items:center; }
+  .logo { font-size:1.5rem; font-weight:700; }
+  .card { background:white; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.08); padding:24px; margin-bottom:20px; }
+  input, button, textarea { width:100%; padding:12px; margin:8px 0; border:1px solid #ddd; border-radius:8px; font-size:1rem; }
+  button { background:var(--primary); color:white; border:none; cursor:pointer; font-weight:600; }
+  button.success { background:var(--success); }
+  button.danger { background:var(--danger); }
+  button.secondary { background:#6c757d; }
+  .hidden { display:none !important; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+  .task-card { border:1px solid #e9ecef; border-radius:10px; padding:16px; }
+  .balance { font-size:1.8rem; font-weight:700; color:var(--success); }
+  .timer { font-size:2rem; font-weight:bold; text-align:center; margin:16px 0; color:var(--primary); }
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  th, td { padding:10px; text-align:left; border-bottom:1px solid #eee; }
+  .alert { padding:12px; border-radius:8px; margin:10px 0; }
+  .alert-success { background:#d1e7dd; color:#0f5132; }
+  .alert-error { background:#f8d7da; color:#842029; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="logo">TaskEarn Nigeria</div>
+    <div id="userInfo" class="hidden">
+      Balance: <span id="balanceDisplay" class="balance">₦0</span>
+      <button id="logoutBtn" class="secondary" style="width:auto; margin-left:12px; padding:8px 16px;">Logout</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div id="authSection" class="card">
+    <h2>Welcome to TaskEarn</h2>
+    <p>Complete tasks and earn real Naira.</p>
+    <div style="display:flex; gap:10px; margin:16px 0;">
+      <button id="showLogin" style="width:auto;">Login</button>
+      <button id="showRegister" class="secondary" style="width:auto;">Register</button>
+    </div>
+    <div id="loginForm">
+      <h3>Login</h3>
+      <input type="email" id="loginEmail" placeholder="Email">
+      <input type="password" id="loginPass" placeholder="Password">
+      <button id="loginBtn">Login</button>
+    </div>
+    <div id="registerForm" class="hidden">
+      <h3>Create Account</h3>
+      <input type="text" id="regName" placeholder="Full Name">
+      <input type="email" id="regEmail" placeholder="Email">
+      <input type="password" id="regPass" placeholder="Password">
+      <input type="text" id="regReferral" placeholder="Referral Code (optional)">
+      <button id="registerBtn" class="success">Register</button>
+    </div>
+    <div id="authMessage"></div>
+  </div>
+
+  <div id="userDashboard" class="hidden">
+    <div class="card">
+      <h2>Available Tasks</h2>
+      <div id="tasksList" class="grid"></div>
+    </div>
+    <div class="card">
+      <h3>My Referral Code</h3>
+      <p>Share this code. You earn ₦200 when someone registers with it.</p>
+      <input type="text" id="myReferralCode" readonly>
+      <button id="copyReferral" style="width:auto; margin-top:8px;">Copy Code</button>
+    </div>
+    <div class="card">
+      <h3>My Earnings</h3>
+      <div id="myHistory"></div>
+    </div>
+  </div>
+
+  <div id="adminPanel" class="hidden">
+    <div class="card">
+      <h2>Admin Dashboard</h2>
+      <div class="grid">
+        <div><strong>Total Users:</strong> <span id="statUsers">0</span></div>
+        <div><strong>Pending:</strong> <span id="statPending">0</span></div>
+        <div><strong>Total Paid:</strong> <span id="statPaid">₦0</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Add New Task</h3>
+      <input type="text" id="newTaskTitle" placeholder="Task title">
+      <input type="number" id="newTaskReward" placeholder="Reward (Naira)" value="600">
+      <textarea id="newTaskDesc" placeholder="Description" rows="3"></textarea>
+      <button id="addTaskBtn" class="success">Add Task</button>
+    </div>
+    <div class="card">
+      <h3>Pending Submissions</h3>
+      <div id="pendingList"></div>
+    </div>
+    <div class="card">
+      <h3>All Users</h3>
+      <div id="usersList"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, query, where, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDa718Vz2JbqA4m-6AmmeuwZlPRTNbtN3Y",
+  authDomain: "task-earn-1208c.firebaseapp.com",
+  projectId: "task-earn-1208c",
+  storageBucket: "task-earn-1208c.firebasestorage.app",
+  messagingSenderId: "1054646588228",
+  appId: "1:1054646588228:web:8712597589bdfd43f1fd11",
+  measurementId: "G-9XRH0P641T"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const ADMIN_EMAIL = "allah24434@admin.com";
+const ADMIN_PASS = "biggesttaskearner";
+
+let currentUser = null;
+
+function showMessage(text, type = "success") {
+  document.getElementById("authMessage").innerHTML = `<div class="alert alert-\( {type}"> \){text}</div>`;
+  setTimeout(() => document.getElementById("authMessage").innerHTML = "", 4000);
+}
+
+document.getElementById("showLogin").onclick = () => {
+  document.getElementById("loginForm").classList.remove("hidden");
+  document.getElementById("registerForm").classList.add("hidden");
+};
+document.getElementById("showRegister").onclick = () => {
+  document.getElementById("registerForm").classList.remove("hidden");
+  document.getElementById("loginForm").classList.add("hidden");
+};
+
+document.getElementById("registerBtn").onclick = async () => {
+  const name = document.getElementById("regName").value.trim();
+  const email = document.getElementById("regEmail").value.trim();
+  const pass = document.getElementById("regPass").value;
+  const ref = document.getElementById("regReferral").value.trim();
+  if (!name || !email || !pass) return alert("Fill all fields");
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const referralCode = name.substring(0, 4).toUpperCase() + Math.floor(Math.random() * 9000 + 1000);
+    await setDoc(doc(db, "users", cred.user.uid), {
+      name, email, balance: 0, referralCode, referredBy: ref || null, createdAt: serverTimestamp()
+    });
+    if (ref) {
+      const q = query(collection(db, "users"), where("referralCode", "==", ref));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const refUser = snap.docs[0];
+        await updateDoc(refUser.ref, { balance: increment(200) });
+        await addDoc(collection(db, "submissions"), {
+          userId: refUser.id, userName: refUser.data().name, taskTitle: "Referral Bonus", reward: 200, status: "approved", date: new Date().toISOString()
+        });
+      }
+    }
+    showMessage("Account created! Please login.");
+    document.getElementById("showLogin").click();
+  } catch (e) { showMessage(e.message, "error"); }
+};
+
+document.getElementById("loginBtn").onclick = async () => {
+  const email = document.getElementById("loginEmail").value.trim();
+  const pass = document.getElementById("loginPass").value;
+  try {
+    if (email === ADMIN_EMAIL && pass === ADMIN_PASS) {
+      currentUser = { isAdmin: true, email };
+      sessionStorage.setItem("admin", "true");
+      showAdmin();
+      return;
+    }
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+    currentUser = { uid: cred.user.uid, ...userDoc.data() };
+    showUserDashboard();
+  } catch (e) { showMessage(e.message, "error"); }
+};
+
+document.getElementById("logoutBtn").onclick = () => {
+  signOut(auth);
+  sessionStorage.removeItem("admin");
+  location.reload();
+};
+
+onAuthStateChanged(auth, async (user) => {
+  if (sessionStorage.getItem("admin") === "true") {
+    showAdmin();
+    return;
+  }
+  if (user) {
+    const docSnap = await getDoc(doc(db, "users", user.uid));
+    if (docSnap.exists()) {
+      currentUser = { uid: user.uid, ...docSnap.data() };
+      showUserDashboard();
+    }
+  }
+});
+
+async function showUserDashboard() {
+  document.getElementById("authSection").classList.add("hidden");
+  document.getElementById("userDashboard").classList.remove("hidden");
+  document.getElementById("userInfo").classList.remove("hidden");
+  document.getElementById("balanceDisplay").textContent = "₦" + (currentUser.balance || 0);
+  document.getElementById("myReferralCode").value = currentUser.referralCode || "";
+  loadTasks();
+  loadMyHistory();
+}
+
+function showAdmin() {
+  document.getElementById("authSection").classList.add("hidden");
+  document.getElementById("adminPanel").classList.remove("hidden");
+  document.getElementById("userInfo").classList.remove("hidden");
+  document.getElementById("balanceDisplay").textContent = "ADMIN";
+  loadAdmin();
+}
+
+async function loadTasks() {
+  const snap = await getDocs(collection(db, "tasks"));
+  const container = document.getElementById("tasksList");
+  container.innerHTML = "";
+  if (snap.empty) {
+    await addDoc(collection(db, "tasks"), {
+      title: "Watch video for 30 seconds",
+      reward: 600,
+      desc: "Watch the full video for 30 seconds to earn ₦600."
+    });
+    return loadTasks();
+  }
+  snap.forEach(docSnap => {
+    const t = docSnap.data();
+    const div = document.createElement("div");
+    div.className = "task-card";
+    div.innerHTML = `
+      <h3>${t.title}</h3>
+      <p>${t.desc}</p>
+      <p><strong>Reward:</strong> ₦${t.reward}</p>
+      <button class="success start-task" data-id="\( {docSnap.id}" data-title=" \){t.title}" data-reward="${t.reward}">Start Task</button>
+    `;
+    container.appendChild(div);
+  });
+  document.querySelectorAll(".start-task").forEach(btn => {
+    btn.onclick = () => startTask(btn.dataset.id, btn.dataset.title, parseInt(btn.dataset.reward));
+  });
+}
+
+let timerInterval;
+function startTask(taskId, title, reward) {
+  if (!confirm(`Start: \( {title}\nWait 30 seconds to claim ₦ \){reward}`)) return;
+  let seconds = 30;
+  const modal = document.createElement("div");
+  modal.className = "card";
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;width:90%;max-width:400px;";
+  modal.innerHTML = `
+    <h3>${title}</h3>
+    <div class="timer" id="timer">${seconds}s</div>
+    <button id="claimBtn" class="success" disabled>Claim ₦${reward}</button>
+    <button id="closeModal" class="secondary" style="margin-top:8px;">Cancel</button>
+  `;
+  document.body.appendChild(modal);
+  const claimBtn = document.getElementById("claimBtn");
+  timerInterval = setInterval(() => {
+    seconds--;
+    document.getElementById("timer").textContent = seconds + "s";
+    if (seconds <= 0) {
+      clearInterval(timerInterval);
+      document.getElementById("timer").textContent = "Done!";
+      claimBtn.disabled = false;
+      claimBtn.onclick = async () => {
+        await addDoc(collection(db, "submissions"), {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          taskId, taskTitle: title, reward,
+          status: "pending",
+          date: new Date().toISOString()
+        });
+        alert("Submitted! Waiting for admin approval.");
+        document.body.removeChild(modal);
+        loadMyHistory();
+      };
+    }
+  }, 1000);
+  document.getElementById("closeModal").onclick = () => {
+    clearInterval(timerInterval);
+    document.body.removeChild(modal);
+  };
+}
+
+async function loadMyHistory() {
+  const q = query(collection(db, "submissions"), where("userId", "==", currentUser.uid));
+  const snap = await getDocs(q);
+  const el = document.getElementById("myHistory");
+  if (snap.empty) { el.innerHTML = "<p>No earnings yet.</p>"; return; }
+  let html = "<table><tr><th>Task</th><th>Reward</th><th>Status</th></tr>";
+  snap.forEach(docSnap => {
+    const s = docSnap.data();
+    html += `<tr><td>\( {s.taskTitle}</td><td>₦ \){s.reward}</td><td>${s.status}</td></tr>`;
+  });
+  el.innerHTML = html + "</table>";
+}
+
+async function loadAdmin() {
+  const usersSnap = await getDocs(collection(db, "users"));
+  document.getElementById("statUsers").textContent = usersSnap.size;
+  const pendingSnap = await getDocs(query(collection(db, "submissions"), where("status", "==", "pending")));
+  document.getElementById("statPending").textContent = pendingSnap.size;
+  const approvedSnap = await getDocs(query(collection(db, "submissions"), where("status", "==", "approved")));
+  let total = 0;
+  approvedSnap.forEach(d => total += d.data().reward);
+  document.getElementById("statPaid").textContent = "₦" + total;
+
+  const pendingDiv = document.getElementById("pendingList");
+  pendingDiv.innerHTML = pendingSnap.empty ? "<p>No pending submissions</p>" : "";
+  pendingSnap.forEach(docSnap => {
+    const s = docSnap.data();
+    const div = document.createElement("div");
+    div.style.cssText = "margin:10px 0;padding:12px;border:1px solid #ddd;border-radius:8px;";
+    div.innerHTML = `
+      <strong>${s.userName}</strong> — \( {s.taskTitle} (₦ \){s.reward})<br>
+      <button class="success approve-btn" style="width:auto;margin-top:8px;" data-id="\( {docSnap.id}" data-userid=" \){s.userId}" data-reward="${s.reward}">Approve</button>
+      <button class="danger reject-btn" style="width:auto;margin-top:8px;" data-id="${docSnap.id}">Reject</button>
+    `;
+    pendingDiv.appendChild(div);
+  });
+  document.querySelectorAll(".approve-btn").forEach(btn => {
+    btn.onclick = () => approve(btn.dataset.id, btn.dataset.userid, parseInt(btn.dataset.reward));
+  });
+  document.querySelectorAll(".reject-btn").forEach(btn => {
+    btn.onclick = () => reject(btn.dataset.id);
+  });
+
+  const usersDiv = document.getElementById("usersList");
+  usersDiv.innerHTML = "<table><tr><th>Name</th><th>Email</th><th>Balance</th><th>Referral</th></tr>";
+  usersSnap.forEach(docSnap => {
+    const u = docSnap.data();
+    usersDiv.innerHTML += `<tr><td>\( {u.name}</td><td> \){u.email}</td><td>₦\( {u.balance}</td><td> \){u.referralCode}</td></tr>`;
+  });
+  usersDiv.innerHTML += "</table>";
+
+  document.getElementById("addTaskBtn").onclick = async () => {
+    const title = document.getElementById("newTaskTitle").value.trim();
+    const reward = parseInt(document.getElementById("newTaskReward").value) || 0;
+    const desc = document.getElementById("newTaskDesc").value.trim();
+    if (!title) return alert("Enter title");
+    await addDoc(collection(db, "tasks"), { title, reward, desc });
+    document.getElementById("newTaskTitle").value = "";
+    document.getElementById("newTaskDesc").value = "";
+    alert("Task added!");
+  };
+}
+
+async function approve(subId, userId, reward) {
+  await updateDoc(doc(db, "submissions", subId), { status: "approved" });
+  await updateDoc(doc(db, "users", userId), { balance: increment(reward) });
+  loadAdmin();
+}
+async function reject(subId) {
+  await updateDoc(doc(db, "submissions", subId), { status: "rejected" });
+  loadAdmin();
+}
+
+document.getElementById("copyReferral").onclick = () => {
+  navigator.clipboard.writeText(document.getElementById("myReferralCode").value);
+  alert("Copied!");
+};
+</script>
+</body>
+</html>
